@@ -1,0 +1,12 @@
+_main[]
+	string str1, str2,blankSTR,ccSubmission;
+	str1 = "eradicate";
+	blankSTR = "  ";
+	str2 = "plagiarism";
+	function [string s]= _concatenate[string a, string a2]
+		str1 = a1 + a2;
+	end;
+	ccSubmission = _concatenate(str1, blankSTR);
+	ccSubmission = _concatenate(ccSubmission, str2);
+
+end;

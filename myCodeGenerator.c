@@ -1,0 +1,886 @@
+/*
+*Batch Number 18
+*SWATI SHARMA (2014H112176P)
+*SAGAR CHOUDHARI (2014H112183P)
+*/
+#include "myCodeGeneratorDef.h"
+#include "myCodeGenerator.h"
+#include "ASTDef.h"
+#include "typeChecker.h"
+
+
+int isasmRegisterEmpty[4];
+FILE* asmm;
+char* jump;
+char* input;
+char* output;
+int emptyRegister;
+quadruple* inputfuncquad;
+quadruple* outputfuncquad;
+LinkList listOfFunctions; 
+LinkList listOfSymbols;
+
+void generateasmCode(quadruple* quadList, FILE* asmFile)
+{
+
+	
+	int i;
+	FILE* fin;
+	
+	asmm = asmFile;//fopen(asmFile, "w");
+	initasmRegisters();
+	labelNum = 0;
+	fprintf(asmm, ".model tiny\n");
+	fprintf(asmm, ".stack 1000\n\n");
+	fprintf(asmm, ".data\n");
+	declarationInfoasm();
+/*	for (i = 0; i < ast.root->no_of_children; i++)
+	{
+		declarationInfo(ast.root->children[i], asmm);
+	}*/
+	fprintf(asmm, "tempStr db 21 dup(?)\n");
+	fprintf(asmm, "tempStr2 db 21 dup(?)\n");
+	fprintf(asmm, "tempStr3 db 21 dup(?)\n");
+	fprintf(asmm, "tempMatrix dw 100 dup(0)\n");
+	fprintf(asmm, "tempMatrix2 dw 100 dup(0)\n");
+	fprintf(asmm, "matrixAddress dw ? \n");
+	fprintf(asmm, "matrixSize dw ? \n");
+	fprintf(asmm, "strAddress dw ? \n");
+	fprintf(asmm, "destStrAddress dw ? \n");
+	fprintf(asmm, "\n.code\n");
+	fprintf(asmm, "\n.startup\n");
+	fin = fopen("iocode.txt", "r");
+	
+	quadruple* currentquadruple =quadList;
+	//quadruple* quad = (quadruple*) malloc(sizeof(quadruple));
+	quadruple* whilequad;
+	quadruple* ifquad;
+	while(currentquadruple->next!=NULL)
+	{
+		if(currentquadruple->operators==LABLE)
+		{
+			if(currentquadruple->operand_1 !=NULL)
+			{	if(strcmp(currentquadruple->operand_1,"whilelabel")==0)
+				{
+					whilequad=currentquadruple;
+					currentquadruple=_generatewhileasmCode(whilequad);
+				}	
+				else if(strcmp(currentquadruple->operand_1,"function")==0)
+				{
+					
+					currentquadruple=_generatefunctionasmCode(currentquadruple);
+				}				
+			}
+		}
+		if(currentquadruple->operators==GREATER_OR_EQUAL || currentquadruple->operators==LESS_OR_EQUAL || currentquadruple->operators==GREATER || currentquadruple->operators==LESS || currentquadruple->operators==NOT_EQUAL || currentquadruple->operators==EQUAL)
+		{
+			ifquad=currentquadruple;
+			currentquadruple=_generateifasmCode(ifquad);
+			if(strcmp(currentquadruple->operand_1,"postif")==0)
+			{
+				_generateasmCode(currentquadruple);
+			}					
+		}
+		if(currentquadruple->operators==FUNC_SAVE|| currentquadruple->operators==FUNC_COMP)
+		{
+			currentquadruple=_generatefunctioncallasmCode(currentquadruple);
+		}
+		_generateasmCode(currentquadruple);
+		currentquadruple=currentquadruple->next;
+	}
+	fprintf(asmm,".exit\n");
+	fprintf(asmm, "\n\n");
+	initasmBasicIo(fin, asmm);
+
+	//fprintf(asmm, ".end\n");
+	fclose(fin);
+	fclose(asmm);
+}
+
+quadruple* _generatefunctioncallasmCode(quadruple* funcallquad)
+{
+	int emptyRegister,reg1;
+	inputfuncquad=funcallquad;
+	outputfuncquad=funcallquad;
+	while(funcallquad->operators!=FUNC)
+	{
+		funcallquad=funcallquad->next;
+	}
+	input=funcallquad->operand_2;
+	output=funcallquad->result;
+	while(strcmp(output,inputfuncquad->result)!=0)
+	{
+		inputfuncquad=inputfuncquad->next;
+	}
+	inputfuncquad=inputfuncquad->next;
+	if(inputfuncquad->operand_2==NULL && strcmp(inputfuncquad->next->operand_1,inputfuncquad->result)!=0)
+	{
+		emptyRegister = getasmEmptyRegister();
+		if (emptyRegister == -1)
+		{
+			printf("How come no register empty??");
+			getchar();
+			return;
+		}
+		reg1 = emptyRegister;
+		fprintf(asmm, "\tMOV %s, %s\n", regasm[reg1],inputfuncquad->operand_1);
+		fprintf(asmm, "\tPUSH %s\n",regasm[reg1] );
+		isasmRegisterEmpty[emptyRegister] = 1;
+	}
+	else
+	{
+		emptyRegister = getasmEmptyRegister();
+		if (emptyRegister == -1)
+		{
+			printf("How come no register empty??");
+			getchar();
+			return;
+		}
+		reg1 = emptyRegister;
+		fprintf(asmm, "\tMOV %s, %s\n", regasm[reg1],inputfuncquad->operand_1);
+		fprintf(asmm, "\tPUSH %s\n",regasm[reg1] );
+		fprintf(asmm, "\tMOV %s, %s\n", regasm[reg1],inputfuncquad->operand_2);
+		fprintf(asmm, "\tPUSH %s\n",regasm[reg1] );
+		jump=inputfuncquad->result;
+		inputfuncquad=inputfuncquad->next;
+		while(strcmp(jump,inputfuncquad->operand_1)==0)
+		{
+			fprintf(asmm, "\tMOV %s, %s\n", regasm[reg1],inputfuncquad->operand_2);
+			fprintf(asmm, "\tPUSH %s\n",regasm[reg1] );
+			jump=inputfuncquad->result;
+			inputfuncquad=inputfuncquad->next;
+		}					
+		isasmRegisterEmpty[emptyRegister] = 1;
+	}
+
+	fprintf(asmm,"\tcall %s\n",funcallquad->operand_1);
+
+	while(outputfuncquad->operators!=FUNC_SAVE)
+	{
+		outputfuncquad=outputfuncquad->next;
+	}
+	if(outputfuncquad->operand_2==NULL)
+	{
+		emptyRegister = getasmEmptyRegister();
+		if (emptyRegister == -1)
+		{
+			printf("How come no register empty??");
+			getchar();
+			return;
+		}
+		reg1 = emptyRegister;
+		fprintf(asmm, "\tPOP %s\n",regasm[reg1]);
+		fprintf(asmm, "\tMOV  %s, %s\n",outputfuncquad->operand_1,regasm[reg1]);
+		isasmRegisterEmpty[emptyRegister] = 1;
+	}
+	else
+	{
+		emptyRegister = getasmEmptyRegister();
+		if (emptyRegister == -1)
+		{
+			printf("How come no register empty??");
+			getchar();
+			return;
+		}
+		reg1 = emptyRegister;
+		fprintf(asmm, "\tPOP %s\n",regasm[reg1]);
+		fprintf(asmm, "\tMOV  %s, %s\n",outputfuncquad->operand_1,regasm[reg1]);
+		fprintf(asmm, "\tPOP %s\n",regasm[reg1]);
+		fprintf(asmm, "\tMOV  %s, %s\n",outputfuncquad->operand_2,regasm[reg1]);
+		jump=outputfuncquad->result;
+		outputfuncquad=outputfuncquad->next;
+
+		while(strcmp(jump,outputfuncquad->operand_1)==0 && outputfuncquad->operators==FUNC_SAVE)
+		{
+			fprintf(asmm, "\tPOP %s\n",regasm[reg1]);
+			fprintf(asmm, "\tMOV  %s, %s\n",outputfuncquad->operand_2,regasm[reg1]);
+			jump=outputfuncquad->result;
+			outputfuncquad=outputfuncquad->next;
+		}					
+		isasmRegisterEmpty[emptyRegister] = 1;
+	}
+	funcallquad=funcallquad->next;
+	return funcallquad;
+}
+
+
+quadruple* _generatefunctionasmCode(quadruple* funcquad)
+{
+
+	int emptyRegister,reg1;
+	while(funcquad->operators!=RETURN)
+	{
+	
+		if(funcquad->operators==LABLE)
+		{
+		}
+		else if(funcquad->operators==LABLE)
+		{
+			if(funcquad->operand_1 !=NULL)
+			{	if(strcmp(funcquad->operand_1,"whilelabel")==0)
+				{
+					
+					funcquad=_generatewhileasmCode(funcquad);
+				}	
+				else if(strcmp(funcquad->operand_1,"function")==0)
+				{
+					
+					funcquad=_generatefunctionasmCode(funcquad);
+				}				
+			}
+		}
+		else if(funcquad->operators==GREATER_OR_EQUAL || funcquad->operators==LESS_OR_EQUAL || funcquad->operators==GREATER || funcquad->operators==LESS || funcquad->operators==NOT_EQUAL || funcquad->operators==EQUAL)
+		{
+			funcquad=_generateifasmCode(funcquad);
+			if(strcmp(funcquad->operand_1,"postif")==0)
+			{
+				_generateasmCode(funcquad);
+			}					
+		}
+		else if(funcquad->operators==FUNC_PAR)
+		{
+			inputfuncquad=funcquad;
+			outputfuncquad=funcquad;
+			while(funcquad->operators!=FUNC_ID)
+			{
+				funcquad=funcquad->next;
+			}
+			fprintf(asmm, "\n%s proc\n\n", funcquad->operand_1);
+			input=funcquad->operand_2;
+			output=funcquad->result;
+			while(strcmp(output,inputfuncquad->result)!=0)
+			{
+				inputfuncquad=inputfuncquad->next;
+			}
+			inputfuncquad=inputfuncquad->next;
+			if(inputfuncquad->operand_2==NULL && strcmp(inputfuncquad->next->operand_1,inputfuncquad->result)!=0)
+			{
+					emptyRegister = getasmEmptyRegister();
+					if (emptyRegister == -1)
+					{
+						printf("How come no register empty??");
+						getchar();
+						return;
+					}
+					reg1 = emptyRegister;
+			
+					fprintf(asmm, "\tPOP %s\n",regasm[reg1] );
+					fprintf(asmm, "\tMOV %s, %s\n", inputfuncquad->operand_1,regasm[reg1]);
+					isasmRegisterEmpty[emptyRegister] = 1;
+			}
+			else
+			{
+				emptyRegister = getasmEmptyRegister();
+				if (emptyRegister == -1)
+				{
+					printf("How come no register empty??");
+					getchar();
+					return;
+				}
+				reg1 = emptyRegister;
+				fprintf(asmm, "\tPOP %s\n",regasm[reg1] );
+				fprintf(asmm, "\tMOV %s, %s\n", inputfuncquad->operand_1,regasm[reg1]);
+				fprintf(asmm, "\tPOP %s\n",regasm[reg1] );
+				fprintf(asmm, "\tMOV %s, %s\n", inputfuncquad->operand_2,regasm[reg1]);
+				jump=inputfuncquad->result;
+				inputfuncquad=inputfuncquad->next;
+				while(strcmp(jump,inputfuncquad->operand_1)==0)
+				{
+					fprintf(asmm, "\tPOP %s\n",regasm[reg1] );
+					fprintf(asmm, "\tMOV %s, %s\n", inputfuncquad->operand_2,regasm[reg1]);
+					jump=inputfuncquad->result;
+					inputfuncquad=inputfuncquad->next;
+				}					
+				isasmRegisterEmpty[emptyRegister] = 1;
+			}
+		}
+		else
+		{
+			_generateasmCode(funcquad);
+		}
+		funcquad=funcquad->next;
+	}
+	if(funcquad->operators==RETURN)
+	{
+		while(outputfuncquad->operators!=FUNC_PAR)
+		{
+			outputfuncquad=outputfuncquad->next;
+		}
+		if(outputfuncquad->operand_2==NULL && strcmp(outputfuncquad->next->operand_1,outputfuncquad->result)!=0)
+		{
+			emptyRegister = getasmEmptyRegister();
+			if (emptyRegister == -1)
+			{
+				printf("How come no register empty??");
+				getchar();
+				return;
+			}
+			reg1 = emptyRegister;
+			fprintf(asmm, "\tMOV  %s, %s\n",regasm[reg1], outputfuncquad->operand_1);
+			fprintf(asmm, "\tPUSH %s\n",regasm[reg1]);
+			isasmRegisterEmpty[emptyRegister] = 1;
+		}
+		else
+		{
+			emptyRegister = getasmEmptyRegister();
+			if (emptyRegister == -1)
+			{
+				printf("How come no register empty??");
+				getchar();
+				return;
+			}
+			reg1 = emptyRegister;
+			fprintf(asmm, "\tMOV  %s, %s\n",regasm[reg1], outputfuncquad->operand_1);
+			fprintf(asmm, "\tPUSH %s\n",regasm[reg1]);
+			fprintf(asmm, "\tMOV  %s, %s\n",regasm[reg1], outputfuncquad->operand_2);
+			fprintf(asmm, "\tPUSH %s\n",regasm[reg1]);
+			jump=outputfuncquad->result;
+			outputfuncquad=outputfuncquad->next;
+			while(strcmp(jump,outputfuncquad->operand_1)==0)
+			{
+				fprintf(asmm, "\tMOV  %s, %s\n",regasm[reg1], outputfuncquad->operand_2);
+				fprintf(asmm, "\tPUSH %s\n",regasm[reg1]);
+				jump=outputfuncquad->result;
+				outputfuncquad=outputfuncquad->next;
+			}					
+			isasmRegisterEmpty[emptyRegister] = 1;
+		}
+	}
+	fprintf(asmm, "\nendp\n\n");
+	return funcquad;
+}
+
+quadruple* _generatewhileasmCode(quadruple* whilequad)
+{
+	int emptyRegister,emptyRegister1,reg1,reg2;
+	quad_type operator;
+	quadruple* currentwhilequad;
+	while(strcmp(whilequad->operand_1,"afterwhilelabel")!=0)
+	{
+		if(whilequad->operators==LABLE)
+		{
+			_generateasmCode(whilequad);
+		}
+		else if(whilequad->operators==GREATER_OR_EQUAL || whilequad->operators==LESS_OR_EQUAL || whilequad->operators==GREATER
+			 || whilequad->operators==LESS || whilequad->operators==NOT_EQUAL || 
+		whilequad->operators==EQUAL  || whilequad->operators==AND || whilequad->operators==OR || whilequad->operators==NOT)
+		{	
+			operator=whilequad->operators;
+			emptyRegister = getasmEmptyRegister();
+			if (emptyRegister == -1)
+			{
+				printf("How come no register empty??");
+				getchar();
+				return;
+			}
+			fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],whilequad->operand_2);
+			fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+			fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],whilequad->operand_1);
+			fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+			isasmRegisterEmpty[emptyRegister] = 1;
+			emptyRegister = getasmEmptyRegister();
+			if (emptyRegister == -1)
+			{
+				printf("How come no register empty??");
+				getchar();
+				return;
+			}
+			reg1 = emptyRegister;
+			
+			fprintf(asmm, "\tPOP %s\n", regasm[reg1]);
+			
+			emptyRegister1 = getasmEmptyRegister();
+			if (emptyRegister1 == -1)
+			{
+				printf("How come no register empty??");
+				getchar();
+				return;
+			}
+			reg2 = emptyRegister1;
+			fprintf(asmm, "\tPOP %s\n", regasm[reg2]);
+			fprintf(asmm, "\tCMP %s, %s \n",regasm[reg1],regasm[reg2]);
+			whilequad=whilequad->next;
+			if(whilequad->operators==IF)
+			{
+				jump=whilequad->result;
+				whilequad=whilequad->next;
+			}
+			if(operator==LESS)
+			{
+				fprintf(asmm, "\tJL %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", whilequad->operand_1);
+			}
+			else if(operator==LESS_OR_EQUAL)
+			{
+				fprintf(asmm, "\tJLE %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", whilequad->operand_1);
+			}
+			else if(operator==GREATER)
+			{
+				fprintf(asmm, "\tJG %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", whilequad->operand_1);
+			}
+			else if(operator==GREATER_OR_EQUAL)
+			{
+				fprintf(asmm, "\tJGE %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", whilequad->operand_1);
+			}
+			else if(operator==EQUAL)
+			{
+				fprintf(asmm, "\tJE %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", whilequad->operand_1);
+			}
+			else if(operator==NOT_EQUAL)
+			{
+				fprintf(asmm, "\tJNE %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", whilequad->operand_1);
+			}
+			isasmRegisterEmpty[emptyRegister] = 1;
+			isasmRegisterEmpty[emptyRegister1] = 1;
+		}
+		else if(strcmp(whilequad->operand_1,"whilelabel")==0)
+				{
+					currentwhilequad=whilequad;
+					whilequad=_generatewhileasmCode(currentwhilequad);
+					if(strcmp(whilequad->operand_1,"afterwhilelabel")==0)
+					{
+						_generateasmCode(whilequad);
+					}
+				}		
+		else if(whilequad->operators==GREATER_OR_EQUAL || whilequad->operators==LESS_OR_EQUAL || whilequad->operators==GREATER || whilequad->operators==LESS || whilequad->operators==NOT_EQUAL || whilequad->operators==EQUAL  || whilequad->operators==AND || whilequad->operators==OR || whilequad->operators==NOT)
+
+		{
+			whilequad=_generateifasmCode(whilequad);
+		}
+		else if(strcmp(whilequad->operand_1,"function")==0)
+		{
+			whilequad=_generatefunctionasmCode(whilequad);
+		}	
+		else
+		{
+			_generateasmCode(whilequad);
+		}
+		whilequad=whilequad->next;
+	}
+	
+	return whilequad;
+}
+
+
+
+
+quadruple* _generateifasmCode(quadruple* ifquad)
+{
+	int emptyRegister,emptyRegister1,reg1,reg2;
+	quad_type operator;
+	while(strcmp(ifquad->operand_1,"postif")!=0)
+	{
+		if(ifquad->operators==GREATER_OR_EQUAL || ifquad->operators==LESS_OR_EQUAL || ifquad->operators==GREATER || ifquad->operators==LESS || ifquad->operators==NOT_EQUAL || ifquad->operators==EQUAL  || ifquad->operators==AND || ifquad->operators==OR || ifquad->operators==NOT)
+		{	
+			operator=ifquad->operators;
+			emptyRegister = getasmEmptyRegister();
+			if (emptyRegister == -1)
+			{
+				printf("How come no register empty??");
+				getchar();
+				return;
+			}
+			fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],ifquad->operand_2);
+			fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+			fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],ifquad->operand_1);
+			fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+			isasmRegisterEmpty[emptyRegister] = 1;
+			emptyRegister = getasmEmptyRegister();
+			if (emptyRegister == -1)
+			{
+				printf("How come no register empty??");
+				getchar();
+				return;
+			}
+			reg1 = emptyRegister;
+			
+			fprintf(asmm, "\tPOP %s\n", regasm[reg1]);
+			
+			emptyRegister1 = getasmEmptyRegister();
+			if (emptyRegister1 == -1)
+			{
+				printf("How come no register empty??");
+				getchar();
+				return;
+			}
+			reg2 = emptyRegister1;
+			fprintf(asmm, "\tPOP %s\n", regasm[reg2]);
+			fprintf(asmm, "\tCMP %s, %s \n",regasm[reg1],regasm[reg2]);
+			ifquad=ifquad->next;
+			if(ifquad->operators==IF)
+			{
+				jump=ifquad->result;
+				ifquad=ifquad->next;
+			}
+			if(operator==LESS)
+			{
+				fprintf(asmm, "\tJL %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", ifquad->operand_1);
+			}
+			else if(operator==LESS_OR_EQUAL)
+			{
+				fprintf(asmm, "\tJLE %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", ifquad->operand_1);
+			}
+			else if(operator==GREATER)
+			{
+				fprintf(asmm, "\tJG %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", ifquad->operand_1);
+			}
+			else if(operator==GREATER_OR_EQUAL)
+			{
+				fprintf(asmm, "\tJGE %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", ifquad->operand_1);
+			}
+			else if(operator==EQUAL)
+			{
+				fprintf(asmm, "\tJE %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", ifquad->operand_1);
+			}
+			else if(operator==NOT_EQUAL)
+			{
+				fprintf(asmm, "\tJNE %s\n", jump);
+				fprintf(asmm, "\tJMP %s\n", ifquad->operand_1);
+			}
+			isasmRegisterEmpty[emptyRegister] = 1;
+			isasmRegisterEmpty[emptyRegister1] = 1;
+		}
+		else if(ifquad->operators==LABLE && ifquad->operand_1=="elsestart")
+		{
+			fprintf(asmm, "\n%s:\n", ifquad->result);
+		}
+		else if(ifquad->operators==GREATER_OR_EQUAL || ifquad->operators==LESS_OR_EQUAL || ifquad->operators==GREATER || ifquad->operators==LESS || ifquad->operators==NOT_EQUAL || ifquad->operators==EQUAL  || ifquad->operators==AND || ifquad->operators==OR || ifquad->operators==NOT)
+		{
+			ifquad=_generateifasmCode(ifquad);
+		}
+		else if(strcmp(ifquad->operand_1,"whilelabel")==0)
+		{
+			ifquad=_generatewhileasmCode(ifquad);
+			if(strcmp(ifquad->operand_1,"afterwhilelabel")==0)
+			{
+				_generateasmCode(ifquad);
+			}
+		}
+		else if(strcmp(ifquad->operand_1,"function")==0)
+		{
+			ifquad=_generatefunctionasmCode(ifquad);
+		}			
+		else
+		{
+			_generateasmCode(ifquad);
+		}
+		ifquad=ifquad->next;
+	}
+	return ifquad;
+}
+
+
+
+void initasmRegisters()
+{
+	strcpy(regasm[0], "AX");
+	strcpy(regasm[1], "BX");
+	strcpy(regasm[2], "CX");
+	strcpy(regasm[3], "DX");
+
+	int i;
+	for (i = 0; i < 4; i++)
+	{
+		isasmRegisterEmpty[i] = 1;
+	}
+
+	return;
+}
+
+int getasmEmptyRegister()
+{
+	int i = 0;
+	while(i < 4)
+	{
+		if (isasmRegisterEmpty[i]==1)
+		{
+			isasmRegisterEmpty[i] = 0;
+			return i;
+		}
+		i++;
+	}
+
+	return -1;
+}
+
+void declarationInfoasm()
+{
+	LinkListNode* itr;
+	LinkListNode* itr2;
+	for (itr2 = listOfFunctions.head; itr2 != NULL; itr2 = itr2->next)
+	{
+		FunctionSymbolTableEntry* entr = (FunctionSymbolTableEntry*)itr2->element;
+	}
+	for (itr = listOfSymbols.head; itr != NULL; itr = itr->next)
+	{
+		SymbolTableEntry* entry = (SymbolTableEntry*)itr->element;
+		if (entry->type != TYPE_MATRIX)
+		{
+			if (strcmp(((ASTNodeData*)entry->scope->data)->symbol->symbolName, "<mainFunction>") != 0)
+			{
+				fprintf(asmm, "%s dw ? \n", entry->tkInfo.lexeme);
+			}
+			else
+			{
+				fprintf(asmm, "%s dw ? \n", entry->tkInfo.lexeme);
+			}
+		}
+	}
+}
+
+void initasmBasicIo(FILE* inp)
+{
+	int c;
+	c = fgetc(inp);
+	while (c != EOF)
+	{
+		fputc(c, asmm);
+		c = fgetc(inp);
+	}
+	//printf("lol");
+}
+
+void _generateasmCode(quadruple* quad)
+{
+	int emptyRegister1,reg1,reg2;
+	if(quad!=NULL && quad->operators!=NULL)
+	{
+
+//fprintf(asmm, "result %s -> %s _ %s\n", quad->result,quad->operand_1,quad->operand_2);
+//}
+		if(quad!=NULL)
+		{
+
+			if(quad->operators == ASSIGNMENT)
+			{
+				if(input!=NULL && output!=NULL && strcmp(input,quad->operand_1)==0 && strcmp(output,quad->result)==0)
+				{
+					fprintf(asmm, "\tPOP %s\n", regasm[emptyRegister]);
+					fprintf(asmm, "\tMOV %s, %s\n", quad->result ,regasm[emptyRegister]);
+					isasmRegisterEmpty[emptyRegister] = 1;
+				}
+				else
+				{
+					emptyRegister = getasmEmptyRegister();
+					if (emptyRegister == -1)
+					{
+						printf("How come no register empty??");
+						getchar();
+						return;
+					}
+					fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],quad->operand_1);
+					fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+					fprintf(asmm, "\tPOP %s\n", regasm[emptyRegister]);
+					fprintf(asmm, "\tMOV %s, %s\n", quad->result, regasm[emptyRegister]);
+					isasmRegisterEmpty[emptyRegister] = 1;
+				}
+				
+			}
+			else if(quad->operators == PLUS || quad->operators == MINUS ||quad->operators==MULTIPLY||quad->operators==DIVIDE)
+			{
+				if(strcmp(quad->operand_2,"1")==0)
+				{
+					emptyRegister = getasmEmptyRegister();
+					if (emptyRegister == -1)
+					{
+						printf("How come no register empty??");
+						getchar();
+						return;
+					}
+			
+					fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],quad->operand_1);
+					fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+					reg1 = emptyRegister;
+					fprintf(asmm, "\tPOP %s\n", regasm[reg1]);
+				
+					if(quad->operators == PLUS)
+					{
+						fprintf(asmm, "\tINC %s\n",regasm[reg1]);
+						fprintf(asmm, "\tPUSH %s\n", regasm[reg1]);
+					}
+					else if(quad->operators == MINUS)
+					{
+						fprintf(asmm, "\tDEC %s\n",regasm[reg1]);
+						fprintf(asmm, "\tPUSH %s\n", regasm[reg1]);
+					}
+					input=quad->result;
+					output=quad->operand_1;
+					isasmRegisterEmpty[emptyRegister] = 1;
+				}
+				else
+				{
+				emptyRegister = getasmEmptyRegister();
+				if (emptyRegister == -1)
+				{
+					printf("How come no register empty??");
+					getchar();
+					return;
+				}
+			
+				fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],quad->operand_2);
+				fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+				fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],quad->operand_1);
+				fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+				isasmRegisterEmpty[emptyRegister] = 1;
+				emptyRegister = getasmEmptyRegister();
+				if (emptyRegister == -1)
+				{
+					printf("How come no register empty??");
+					getchar();
+					return;
+				}
+				reg1 = emptyRegister;
+			
+				fprintf(asmm, "\tPOP %s\n", regasm[reg1]);
+			
+				emptyRegister1 = getasmEmptyRegister();
+				if (emptyRegister1 == -1)
+				{
+					printf("How come no register empty??");
+					getchar();
+					return;
+				}
+				reg2 = emptyRegister1;
+
+				fprintf(asmm, "\tPOP %s\n", regasm[reg2]);
+				if(quad->operators == PLUS)
+				{
+					fprintf(asmm, "\tADD %s, %s\n",regasm[reg1],regasm[reg2]);
+				}
+				else if(quad->operators == MINUS)
+				{
+					fprintf(asmm, "\tSUB %s, %s\n",regasm[reg1],regasm[reg2]);
+				}
+				else if(quad->operators == MULTIPLY)
+				{
+					fprintf(asmm, "\tMUL %s, %s\n",regasm[reg1],regasm[reg2]);
+				}
+				else if(quad->operators == DIVIDE)
+				{
+					fprintf(asmm, "\tDIV %s, %s\n",regasm[reg1],regasm[reg2]);
+				}
+			
+				fprintf(asmm, "\tPUSH %s\n", regasm[reg1]);
+				fprintf(asmm, "\tPOP %s\n", regasm[reg1]);
+				fprintf(asmm, "\tMOV %s, %s\n", quad->result, regasm[reg1]);
+				isasmRegisterEmpty[emptyRegister] = 1;
+				isasmRegisterEmpty[emptyRegister1] = 1;
+				}
+			
+			}
+
+			else if(quad->operators == PRINT)
+			{
+				emptyRegister = getasmEmptyRegister();
+				if (emptyRegister == -1)
+				{
+					printf("How come no register empty??");
+					getchar();
+					return;
+				}
+				fprintf(asmm, "\tMOV %s, %s\n",  regasm[emptyRegister],quad->operand_1);
+				fprintf(asmm, "\tPUSH %s\n", regasm[emptyRegister]);
+				fprintf(asmm, "\tPOP AX\n" );
+				fprintf(asmm,"\tcall print_reg_asm\n");
+				fprintf(asmm, "\tcall print_newLine\n");
+				isasmRegisterEmpty[emptyRegister] = 1;
+
+			}
+			else if(quad->operators == GOTO)
+			{
+				fprintf(asmm,"\tjmp %s\n",quad->operand_1);
+			}
+			else if(quad->operators == LABLE)
+			{
+				fprintf(asmm,"\n%s:\n",quad->result);
+			
+			}
+	/*
+			
+			case RETURN:
+				fprintf(irg,"\t return: \n");
+				break;
+			case FUNC_PAR: 
+			{
+				if(current_quad->operand_2 !=NULL)
+				{	
+					fprintf(irg,"\t%s = %s , %s\n", current_quad->result, current_quad->operand_1, 
+					current_quad->operand_2);
+				}
+				else
+				{
+					fprintf(irg,"\t%s = %s \n", current_quad->result, current_quad->operand_1);
+				}			
+				break;	
+			}
+			case FUNC_ID: 
+			{
+				if(current_quad->operand_2 !=NULL)
+				{
+					fprintf(irg,"\t(%s) = function %s (%s) \n", current_quad->result, 
+					current_quad->operand_1,current_quad->operand_2);
+				
+				}
+				else
+				{
+					fprintf(irg,"\t(%s) = function %s  \n", current_quad->result, current_quad->operand_1);
+				}
+				break;	
+			}
+			case FUNC: 
+			{		
+				if(current_quad->operand_2 !=NULL)
+				{
+					fprintf(irg,"\t(%s) = call %s  (%s)\n", current_quad->result, current_quad->operand_1, 
+					current_quad->operand_2);
+				}
+				else
+				{
+					fprintf(irg,"\t(%s) = call %s  \n", current_quad->result, current_quad->operand_1);
+
+				}
+				break;	
+			}
+			case FUNC_SAVE: 
+			{		
+				if(current_quad->operand_2 !=NULL)
+				{	
+					fprintf(irg,"\t%s = %s , %s\n", current_quad->result, current_quad->operand_1, 
+					current_quad->operand_2);
+				}
+				else
+				{
+					fprintf(irg,"\t%s = %s \n", current_quad->result, current_quad->operand_1);
+				}	
+				break;	
+			}
+			case FUNC_COMP: 
+			{		
+				if(current_quad->operand_2 !=NULL)
+				{
+					fprintf(irg,"\t%s = %s , %s\n", current_quad->result, current_quad->operand_1, 
+					current_quad->operand_2);					
+				}
+				else
+				{
+					fprintf(irg,"\t%s = %s \n", current_quad->result, current_quad->operand_1);
+				}
+				break;	
+			}*/
+
+	}
+	
+}
+
+	
+}

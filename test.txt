@@ -1,0 +1,10 @@
+_main[]
+	int  a,b,d,e;
+	a = 3;
+	b = 5;
+	a=a-1;
+	while(a<3)
+	a=a;
+	d=e;
+	endwhile;
+end;

@@ -1,0 +1,601 @@
+#include "SymbolTableDef.h"
+#include "ASTDef.h"
+#include "typeChecker.h"
+#include "irgenerater.h"
+#include "gvl.h" 
+#include "SymbolTableIR.h"
+#include "Tree.h"
+int current_quad_line=0;
+quadruple* quadList;
+quadruple* next_quad;
+SymbolTableIR* symbolTable;
+char* function_jump;
+char* temp;
+quadruple* new_empty_quad() 
+{
+	quadruple* quad = (quadruple*) malloc(sizeof(quadruple));
+	quad->operand_1 = NULL;
+	quad->operand_2 = NULL;
+	quad->operators = NOP;
+	quad->result = NULL;
+	quad->next = NULL;
+	quad->goto_next = NULL;
+	quad->line = current_quad_line++;
+	return quad;
+}
+void init_quadruples()
+{
+	next_quad = new_empty_quad();
+}
+
+quadruple* new_quadruple(char *result, quad_type operators, char *operand_1, char *operand_2) 
+{
+	quadruple* quad = next_quad;
+	quad->operand_1 = operand_1;
+	quad->operand_2 = operand_2;
+	quad->operators = operators;
+	quad->result=result;
+	append_quadrupel(quad);
+	next_quad = new_empty_quad();
+	return quad;
+}
+
+void append_quadrupel(quadruple* quad) 
+{
+       
+	if (quadList == NULL) 
+	{
+		quadList = quad;
+	} 
+	else 
+	{
+	quadruple* current_quad = quadList;
+		while (current_quad->next) 
+		{
+		current_quad = current_quad->next;
+		}
+	current_quad->next = quad;
+	}
+}
+
+
+void compile_quadruplecode(FILE* irg) 
+{
+	int count;
+	quadruple* current_quad = quadList;
+	printf("\nQuadrupelcode Listing in File \n");
+	printf("---------------------\n");
+	if (current_quad == NULL) 
+	{
+		printf("Nothing to generate\n");
+		return;
+	}
+	do 
+	{
+		if (current_quad->operators == NOP) 
+		{
+			continue;
+		}
+		fprintf(irg,"%i\t", current_quad->line);
+		count=current_quad->line;
+  		switch (current_quad->operators) 
+        	{
+			case ASSIGNMENT:
+			{
+				fprintf(irg,"\t%s = %s \n", current_quad->result, current_quad->operand_1);
+				break;
+			}
+			case MULTIPLY:
+				fprintf(irg,"\t%s = %s * %s\n", current_quad->result, current_quad->operand_1, current_quad->operand_2);
+				break;
+			case DIVIDE:
+				fprintf(irg,"\t%s = %s / %s\n", current_quad->result, current_quad->operand_1, current_quad->operand_2);
+				break;
+			case PLUS:					
+				fprintf(irg,"\t%s = %s + %s\n", current_quad->result, current_quad->operand_1, current_quad->operand_2);
+				break;
+			case MINUS:
+				fprintf(irg,"\t%s = %s - %s\n", current_quad->result, current_quad->operand_1, current_quad->operand_2);
+				break;
+			case GREATER_OR_EQUAL:
+				fprintf(irg,"\t%s = (%s >= %s)\n" , current_quad->result,current_quad->operand_1, current_quad->operand_2);
+				break;
+			case LESS_OR_EQUAL:
+				fprintf(irg,"\t%s = (%s <= %s)\n" , current_quad->result,current_quad->operand_1, current_quad->operand_2);
+				break;
+			case GREATER:
+				fprintf(irg,"\t%s = (%s > %s)\n" , current_quad->result,current_quad->operand_1, current_quad->operand_2);
+				break;
+			case LESS:
+				fprintf(irg,"\t%s = (%s < %s)\n" , current_quad->result,current_quad->operand_1, current_quad->operand_2);
+				break;
+			case NOT_EQUAL:
+				fprintf(irg,"\t%s = (%s != %s)\n" , current_quad->result,current_quad->operand_1, current_quad->operand_2);
+				break;
+			case EQUAL:	     
+		                fprintf(irg,"\t%s = (%s == %s)\n" , current_quad->result,current_quad->operand_1, current_quad->operand_2);
+				break;
+			/*case AND:
+				fprintf(irg,"\t%s = (%s && %s)" , current_quad->result,current_quad->operand_1, current_quad->operand_2);
+				break;
+			case OR:
+				fprintf(irg,"\t%s = (%s || %s)" , current_quad->result,current_quad->operand_1, current_quad->operand_2);
+				break;
+			case NOT:
+				fprintf(irg,"\t%s = !(%s)" , current_quad->result,current_quad->operand_1);
+				break;*/
+			case IF:   		
+				fprintf(irg,"\tIF( %s ) GOTO %s\n",current_quad->operand_1,current_quad->result);
+				break;
+			case GOTO:
+				fprintf(irg,"\tGOTO %s\n", current_quad->operand_1);
+				break;
+			case RETURN:
+				fprintf(irg,"\t return: \n");
+				break;
+			case LABLE: 
+				{
+					if(current_quad->operand_1 !=NULL)
+					{
+						fprintf(irg,"%s: %s\n",current_quad->result,current_quad->operand_1);
+					}
+					else
+					{
+						fprintf(irg,"%s: \n",current_quad->result);
+					}
+					break;
+				}
+			case PRINT: 
+				fprintf(irg,"\tprint(%s)\n",current_quad->operand_1);
+				break;
+			case FUNC_PAR: 
+			{
+				if(current_quad->operand_2 !=NULL)
+				{	
+					fprintf(irg,"\t%s = %s , %s\n", current_quad->result, current_quad->operand_1, 
+					current_quad->operand_2);
+				}
+				else
+				{
+					fprintf(irg,"\t%s = %s \n", current_quad->result, current_quad->operand_1);
+				}			
+				break;	
+			}
+			case FUNC_ID: 
+			{
+				if(current_quad->operand_2 !=NULL)
+				{
+					fprintf(irg,"\t(%s) = function %s (%s) \n", current_quad->result, 
+					current_quad->operand_1,current_quad->operand_2);
+				
+				}
+				else
+				{
+					fprintf(irg,"\t(%s) = function %s  \n", current_quad->result, current_quad->operand_1);
+				}
+				break;	
+			}
+			case FUNC: 
+			{		
+				if(current_quad->operand_2 !=NULL)
+				{
+					fprintf(irg,"\t(%s) = call %s  (%s)\n", current_quad->result, current_quad->operand_1, 
+					current_quad->operand_2);
+				}
+				else
+				{
+					fprintf(irg,"\t(%s) = call %s  \n", current_quad->result, current_quad->operand_1);
+
+				}
+				break;	
+			}
+			case FUNC_SAVE: 
+			{		
+				if(current_quad->operand_2 !=NULL)
+				{	
+					fprintf(irg,"\t%s = %s , %s\n", current_quad->result, current_quad->operand_1, 
+					current_quad->operand_2);
+				}
+				else
+				{
+					fprintf(irg,"\t%s = %s \n", current_quad->result, current_quad->operand_1);
+				}	
+				break;	
+			}
+			case FUNC_COMP: 
+			{		
+				if(current_quad->operand_2 !=NULL)
+				{
+					fprintf(irg,"\t%s = %s , %s\n", current_quad->result, current_quad->operand_1, 
+					current_quad->operand_2);					
+				}
+				else
+				{
+					fprintf(irg,"\t%s = %s \n", current_quad->result, current_quad->operand_1);
+				}
+				break;	
+			}
+			default:
+			{
+				printf("\tInvalid operation!\n");
+				break;
+			}
+		}
+	} while ((current_quad = current_quad->next) != NULL);
+	count++;
+	fprintf(irg,"%i\t", count);	
+	fprintf(irg,"Exit");
+	fclose(irg);
+}
+	
+quadruple* generateirCode(Tree ast,FILE* irg)
+{
+	int i;
+	quadList=new_empty_quad();
+	init_quadruples(ast);
+
+	for (i = 0; i < ast.root->no_of_children; i++)
+	{
+		genquad(ast.root->children[i]);
+	}
+	compile_quadruplecode(irg);
+return quadList;
+}
+
+void genquad(TreeLink astf)
+{
+	char *temp1,*temp2,*inp1,*inp2,*temp3,*temp4;
+	int j,k;
+	TreeLink astg,asth;
+	quadruple *quad,*quad2,*tempo;
+	char *label1,*label2;
+//inp1=retutnmeet(((ASTNodeData*)astf->children[0]->data)->tokenInfo.lexeme);
+//	printf("\ninput: %s",inp1);
+	if(strcmp(((ASTNodeData*)astf->data)->symbol->symbolName, "ASSIGNOP") == 0)
+	{
+		if(strcmp(((ASTNodeData*)astf->children[1]->data)->symbol->symbolName,"<funCallStmt>")==0)
+		{
+			
+			
+			asth=astf->children[0];
+			if(strcmp(((ASTNodeData*)astf->children[0]->data)->symbol->symbolName, "<leftHandSide_listVar>") == 0)
+			{
+				
+				if(asth->no_of_children==2)
+				{
+					inp1=retutnmeet(((ASTNodeData*)asth->children[0]->data)->tokenInfo.lexeme);
+					inp2=retutnmeet(((ASTNodeData*)asth->children[1]->data)->tokenInfo.lexeme);
+					if(strcmp(((ASTNodeData*)asth->children[0]->data)->symbol->symbolName ,"ID")==0 &&
+						 strcmp(((ASTNodeData*)asth->children[1]->data)->symbol->symbolName ,"ID")==0)
+					{	
+						temp=generatevariable();
+						tempo=new_quadruple(temp,FUNC_SAVE,inp1,inp2);
+					}
+				}
+				else 
+				{
+					inp1==retutnmeet(((ASTNodeData*)asth->children[0]->data)->tokenInfo.lexeme);
+					inp2=retutnmeet(((ASTNodeData*)asth->children[1]->data)->tokenInfo.lexeme);
+
+					if(strcmp(((ASTNodeData*)asth->children[0]->data)->symbol->symbolName ,"ID")==0 &&
+						 strcmp(((ASTNodeData*)asth->children[1]->data)->symbol->symbolName ,"ID")==0)
+
+					{	
+						temp=generatevariable();
+						tempo=new_quadruple(temp,FUNC_SAVE,inp1,inp2);
+					}
+					for(k=2;k<asth->no_of_children;k++)
+					{
+
+						inp1=retutnmeet(((ASTNodeData*)asth->children[k]->data)->tokenInfo.lexeme);
+
+						if(strcmp(((ASTNodeData*)asth->children[k]->data)->symbol->symbolName ,"ID")==0)
+						{	
+							temp1=generatevariable();
+							tempo=new_quadruple(temp1,FUNC_SAVE,temp,inp1);
+							temp=temp1;
+						}
+					}
+				}
+			}
+			else
+			{
+				temp=retutnmeet(((ASTNodeData*)astf->children[0]->data)->tokenInfo.lexeme);
+			}
+				temp4=generatevariable();
+				tempo=new_quadruple(temp4,FUNC_SAVE,temp,NULL);
+			astg=astf->children[1];
+			if(astg->no_of_children==2)
+			{
+				inp1=retutnmeet(((ASTNodeData*)astg->children[1]->data)->tokenInfo.lexeme);
+				if(strcmp(((ASTNodeData*)astg->children[1]->data)->symbol->symbolName ,"ID")==0|| 
+		                    (strcmp(((ASTNodeData*)astg->children[1]->data)->symbol->symbolName,"RNUM")==0) || 
+        		            (strcmp(((ASTNodeData*)astg->children[1]->data)->symbol->symbolName ,"ID")==0))
+				{	
+					temp2=generatevariable();
+					tempo=new_quadruple(temp2,FUNC_COMP,inp1,NULL);
+				}
+			}
+			else 
+			{
+				inp1=retutnmeet(((ASTNodeData*)astg->children[1]->data)->tokenInfo.lexeme);
+				inp2=retutnmeet(((ASTNodeData*)astg->children[2]->data)->tokenInfo.lexeme);
+				if((strcmp(((ASTNodeData*)astg->children[1]->data)->symbol->symbolName ,"ID")==0|| 
+		                    (strcmp(((ASTNodeData*)astg->children[1]->data)->symbol->symbolName,"RNUM")==0) || 
+        		            (strcmp(((ASTNodeData*)astg->children[1]->data)->symbol->symbolName ,"ID")==0))
+				&&
+				    (strcmp(((ASTNodeData*)astg->children[2]->data)->symbol->symbolName ,"ID")==0|| 
+		                    (strcmp(((ASTNodeData*)astg->children[2]->data)->symbol->symbolName,"RNUM")==0) || 
+        		            (strcmp(((ASTNodeData*)astg->children[2]->data)->symbol->symbolName ,"ID")==0)))
+				{	
+					temp2=generatevariable();
+					tempo=new_quadruple(temp2,FUNC_COMP,inp1,inp2);
+				}
+				for(k=3;k<astg->no_of_children;k++)
+				{
+					inp1=retutnmeet(((ASTNodeData*)astg->children[k]->data)->tokenInfo.lexeme);
+					if((strcmp(((ASTNodeData*)astg->children[k]->data)->symbol->symbolName ,"ID")==0|| 
+		                    (strcmp(((ASTNodeData*)astg->children[k]->data)->symbol->symbolName,"RNUM")==0) || 
+        		            (strcmp(((ASTNodeData*)astg->children[k]->data)->symbol->symbolName ,"ID")==0)))
+					{	
+						temp3=generatevariable();
+						tempo=new_quadruple(temp3,FUNC_COMP,temp2,inp1);
+						temp2=temp3;
+					}
+				}
+				
+			}
+			//temp3=generatevariable();
+			tempo=new_quadruple(temp4,FUNC,
+					((ASTNodeData*)astg->children[0]->data)->tokenInfo.lexeme,temp2);
+			//tempo=new_quadruple(temp,ASSIGNMENT,temp3,NULL);
+			
+			
+			
+		}
+		else if ((strcmp(((ASTNodeData*)astf->children[1]->data)->symbol->symbolName ,"NUM")==0) || 
+                    (strcmp(((ASTNodeData*)astf->children[1]->data)->symbol->symbolName,"RNUM")==0) || 
+                    (strcmp(((ASTNodeData*)astf->children[1]->data)->symbol->symbolName ,"ID")==0))
+		{
+			quad=new_quadruple(((ASTNodeData*)astf->children[0]->data)->tokenInfo.lexeme,ASSIGNMENT,
+                                           ((ASTNodeData*)astf->children[1]->data)->tokenInfo.lexeme,NULL);
+		}
+		else
+ 		{
+		 	temp=generatequadruple(astf->children[1]);
+			quad=new_quadruple(((ASTNodeData*)astf->children[0]->data)->tokenInfo.lexeme,ASSIGNMENT,temp,NULL);
+        	}
+	}
+	else if(strcmp(((ASTNodeData*)astf->data)->symbol->symbolName, "<ifStmt>") == 0)
+	{      
+		char *label1,*label2,*label3;
+		
+		quadruple *quad1,*quad2,*quad3,*quad4,*quad5;
+	
+		temp=generatequadruple(astf->children[0]);
+		label1=generatelable();
+		quad=new_quadruple(label1,IF,temp,NULL);
+		label2=generatelable();
+		quad1=new_quadruple(NULL,GOTO,label2,NULL);
+		quad=new_quadruple(label1,LABLE,"ifstart",NULL);
+		label3=generatelable();
+		astg=astf->children[1];
+		for(j = 0; j < astg->no_of_children; j++)
+		{
+			asth=astg->children[j];	
+			genquad(asth);			
+		}
+		quad3=new_quadruple(NULL,GOTO,label3,NULL);
+		quad2=new_quadruple(label2,LABLE,"elsestart",NULL);
+		astg=astf->children[2];
+		for(j = 0; j < astg->no_of_children; j++)
+		{
+			asth=astg->children[j];	
+			genquad(asth);			
+		}
+		quad4=new_quadruple(NULL,GOTO,label3,NULL);
+		quad5=new_quadruple(label3,LABLE,"postif",NULL);
+		quad1->goto_next=quad2;		
+		quad3->goto_next=quad5;
+		quad4->goto_next=quad5;
+	}
+	else if(strcmp(((ASTNodeData*)astf->data)->symbol->symbolName, "<whileStmt>") == 0)
+	{      
+		char *label1,*label2,*label3;
+		int k;
+		quadruple *quad1,*quad2,*quad3,*quad4,*quad5;
+		label1=generatelable();		
+		quad=new_quadruple(label1,LABLE,"whilelabel",NULL);
+		temp=generatequadruple(astf->children[0]);
+		label2=generatelable();
+		quad1=new_quadruple(label2,IF,temp,NULL);
+		label3=generatelable();
+		quad2=new_quadruple(NULL,GOTO,label3,NULL);
+		quad3=new_quadruple(label2,LABLE,"whilestart",NULL);
+		astg=astf->children[1];
+		for(j = 0; j < astg->no_of_children; j++)
+		{
+			asth=astg->children[j];	
+			genquad(asth);			
+		}
+		quad4=new_quadruple(NULL,GOTO,label1,NULL);
+		quad5=new_quadruple(label3,LABLE,"afterwhilelabel",NULL);
+		quad2->goto_next=quad5;	
+		quad4->goto_next=quad;	
+	}
+	else if(strcmp(((ASTNodeData*)astf->data)->symbol->symbolName, "<functionDef>") == 0)
+	{      
+		char *label1,*label2,*label3,*temp1;
+		int k;
+		quadruple *quad1,*quad2,*quad3,*quad4,*quad5;
+		label2=generatelable();	
+		quad1=new_quadruple(NULL,GOTO,label2,NULL);
+		function_jump=label2;
+		label1=generatelable();		
+		quad=new_quadruple(label1,LABLE,"function",NULL);		
+		temp=generatequadruple(astf->children[0]);
+		temp1=generatequadruple(astf->children[2]);
+		quad1=new_quadruple(temp,FUNC_ID,((ASTNodeData*)astf->children[1]->data)->tokenInfo.lexeme,temp1);
+		astg=astf->children[3];
+		//for(j = 0; j < astg->no_of_children; j++)
+		//{
+//	        	asth=astg->children[j];	
+			genquad(astg);	
+		//}
+		tempo=new_quadruple(NULL,RETURN,NULL,NULL);	
+		quad5=new_quadruple(function_jump,LABLE,NULL,NULL);
+	}
+	else if(strcmp(((ASTNodeData*)astf->data)->symbol->symbolName, "<stmtsAndFunctionDefs>") == 0)
+	{      
+		for(j = 0; j < astf->no_of_children; j++)
+		{
+	        	asth=astf->children[j];	
+			genquad(asth);			
+		}
+	}
+
+	else if(strcmp(((ASTNodeData*)astf->data)->symbol->symbolName, "PRINT") == 0)
+	{      
+		quad=new_quadruple(NULL,PRINT,((ASTNodeData*)astf->children[0]->data)->tokenInfo.lexeme,NULL);
+	}
+}
+
+	
+
+
+char* generatequadruple(TreeLink astRoot)
+{
+	quad_type OPERATOR;
+	char *temp;
+	char *temp1;
+	quadruple *tempo;
+
+	if(strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "PLUS") == 0)
+		OPERATOR=PLUS;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "MUL") == 0)
+		OPERATOR=MULTIPLY;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "MINUS") == 0)
+		OPERATOR=MINUS;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "DIV") == 0)
+		OPERATOR=DIVIDE;
+	else if(strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "LT") == 0)
+		OPERATOR=LESS;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "GT") == 0)
+		OPERATOR=GREATER;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "LE") == 0)
+		OPERATOR=LESS_OR_EQUAL;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "GE") == 0)
+		OPERATOR=GREATER_OR_EQUAL;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "EQ") == 0)
+		OPERATOR=EQUAL;
+	/*else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "AND") == 0)
+		OPERATOR=AND;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "OR") == 0)
+		OPERATOR=OR;
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "NOT") == 0)
+		OPERATOR=NOT;*/
+	else if (strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "NE") == 0)
+		OPERATOR=NOT_EQUAL;
+	else 
+		OPERATOR=NOP;
+	if(OPERATOR != NOP)
+	{
+		if((strcmp(((ASTNodeData*)astRoot->children[0]->data)->symbol->symbolName ,"NUM")==0)||
+		  (strcmp(((ASTNodeData*)astRoot->children[0]->data)->symbol->symbolName,"RNUM")==0)||
+		  (strcmp(((ASTNodeData*)astRoot->children[0]->data)->symbol->symbolName ,"ID")==0))
+		{
+			if((strcmp(((ASTNodeData*)astRoot->children[1]->data)->symbol->symbolName ,"NUM")==0) ||
+		          (strcmp(((ASTNodeData*)astRoot->children[1]->data)->symbol->symbolName,"RNUM")==0) ||
+		          (strcmp(((ASTNodeData*)astRoot->children[1]->data)->symbol->symbolName ,"ID")==0))
+			{
+				temp=generatevariable();
+				tempo=new_quadruple(temp,OPERATOR,((ASTNodeData*)astRoot->children[0]->data)->tokenInfo.lexeme
+		                             ,((ASTNodeData*)astRoot->children[1]->data)->tokenInfo.lexeme);
+//printf("\nresult:%s -> input1: %s, input2: %s",temp,((ASTNodeData*)astRoot->children[0]->data)->tokenInfo.lexeme,((ASTNodeData*)astRoot->children[1]->data)->tokenInfo.lexeme);
+				return temp;
+			}
+			else
+			{
+				temp1=generatequadruple(astRoot->children[1]);
+				temp=generatevariable();
+				tempo=new_quadruple(temp,OPERATOR,
+				((ASTNodeData*)astRoot->children[0]->data)->tokenInfo.lexeme,temp1);
+//			printf("\nresult:%s -> input1: %s, otherinput2: %s",temp,((ASTNodeData*)astRoot->children[0]->data)->tokenInfo.lexeme,temp1);
+				return temp;
+			}
+			 
+		}
+        
+		else
+		{ 
+			char* temp2;
+		       temp2=generatequadruple(astRoot->children[0]);
+		        if((strcmp(((ASTNodeData*)astRoot->children[1]->data)->symbol->symbolName ,"NUM")==0)||
+		       	  (strcmp(((ASTNodeData*)astRoot->children[1]->data)->symbol->symbolName,"RNUM")==0)||
+		    	  (strcmp(((ASTNodeData*)astRoot->children[1]->data)->symbol->symbolName ,"ID")==0))
+			{
+				temp=generatevariable();
+			        tempo=new_quadruple(temp,OPERATOR,temp2,
+				((ASTNodeData*)astRoot->children[1]->data)->tokenInfo.lexeme);
+			
+			        return temp;
+		       }
+		       else
+		       {
+				char* tem;
+			        tem=generatequadruple(astRoot->children[1]);
+				temp=generatevariable();
+				tempo=new_quadruple(temp,OPERATOR,temp2,tem);
+	 			
+		                return temp;
+		       }
+		}
+	}
+	else  if(strcmp(((ASTNodeData*)astRoot->data)->symbol->symbolName, "<parameter_list>") == 0)
+	{
+		int k;
+		char *temp, *inp1,*inp2,*temp1;
+		quadruple* tempo;
+
+		inp1=retutnmeet(((ASTNodeData*)astRoot->children[1]->data)->tokenInfo.lexeme);
+		if(astRoot->no_of_children==2)
+		{
+		inp1=retutnmeet(((ASTNodeData*)astRoot->children[1]->data)->tokenInfo.lexeme);
+		if(strcmp(((ASTNodeData*)astRoot->children[1]->data)->symbol->symbolName ,"ID")==0)
+			{	
+				temp=generatevariable();
+				tempo=new_quadruple(temp,FUNC_PAR,inp1,NULL);
+			}
+		}
+		else 
+		{
+			inp1==retutnmeet(((ASTNodeData*)astRoot->children[1]->data)->tokenInfo.lexeme);
+			inp2=retutnmeet(((ASTNodeData*)astRoot->children[3]->data)->tokenInfo.lexeme);
+			if(strcmp(((ASTNodeData*)astRoot->children[1]->data)->symbol->symbolName ,"ID")==0 &&
+				 strcmp(((ASTNodeData*)astRoot->children[3]->data)->symbol->symbolName ,"ID")==0)
+				{	
+					temp=generatevariable();
+					tempo=new_quadruple(temp,FUNC_PAR,inp1,inp2);
+				}
+			for(k=4;k<astRoot->no_of_children;k++)
+			{
+				inp1=retutnmeet(((ASTNodeData*)astRoot->children[k]->data)->tokenInfo.lexeme);
+				if(strcmp(((ASTNodeData*)astRoot->children[k]->data)->symbol->symbolName ,"ID")==0)
+				{	
+			
+					temp1=generatevariable();
+					tempo=new_quadruple(temp1,FUNC_PAR,temp,inp1);
+					temp=temp1;
+				}
+			}
+		}
+		
+		return temp;
+	}
+
+}
+
+ char*	retutnmeet(char* value)
+{
+return value;
+}
